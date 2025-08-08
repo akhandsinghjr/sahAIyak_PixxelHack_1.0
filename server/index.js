@@ -16,8 +16,8 @@ app.use(bodyParser.json());
 const jobStatus = new Map();
 
 // Azure configuration
-const SPEECH_ENDPOINT = process.env.AZURE_SPEECH_ENDPOINT || 'https://eastus2.tts.speech.microsoft.com/';
-const API_KEY = process.env.AZURE_API_KEY || '***REMOVED***';
+const SPEECH_ENDPOINT = process.env.AZURE_SPEECH_ENDPOINT
+const API_KEY = process.env.AZURE_API_KEY
 const API_VERSION = '2024-08-01';
 
 // Submit a talking avatar synthesis job
