@@ -107,7 +107,7 @@ This project is built with .
 - shadcn-ui
 - Tailwind CSS
 
-## Groq setup (no server folder needed)
+## Groq setup
 
 - The client never uses the Groq SDK directly. Instead, Vite’s dev proxy forwards POSTs from `/groq/*` to `https://api.groq.com/openai/*` and injects `Authorization: Bearer <GROQ_API_KEY>` from your `.env`.
 - Ensure `.env` has `GROQ_API_KEY=...` before running `npm run dev`.
