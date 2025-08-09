@@ -21,6 +21,7 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [webSpeechResult, setWebSpeechResult] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
   useEffect(() => {
@@ -28,6 +29,7 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
       // Reset states when text changes
       setIsPlaying(false);
       setAudioUrl(null);
+      setWebSpeechResult(null);
       setError(null);
       generateSpeech();
     }
@@ -37,6 +39,10 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
+      }
+      // Stop Web Speech API if it's running
+      if (window.speechSynthesis && window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
       }
       setIsPlaying(false);
     };
@@ -57,6 +63,37 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
       playAudio();
     }
   }, [audioUrl, autoPlay]);
+
+  // Handle Web Speech API autoplay and event binding
+  useEffect(() => {
+    if (webSpeechResult && autoPlay) {
+      const utterance = webSpeechResult.utterance;
+      if (utterance) {
+        // Set up event listeners for Web Speech API
+        utterance.onstart = () => {
+          console.log('Web Speech started');
+          setIsPlaying(true);
+        };
+        
+        utterance.onend = () => {
+          console.log('Web Speech ended');
+          setIsPlaying(false);
+          if (onComplete) {
+            onComplete();
+          }
+        };
+        
+        utterance.onerror = (event: any) => {
+          console.error('Web Speech error:', event);
+          setError('Speech synthesis error occurred');
+          setIsPlaying(false);
+        };
+        
+        // Start speaking
+        webSpeechResult.speak?.();
+      }
+    }
+  }, [webSpeechResult, autoPlay, onComplete]);
   
   const generateSpeech = async () => {
     if (!text.trim()) return;
@@ -89,13 +126,11 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
         if ('groqTTS' in result && result.audioUrl) {
           // Groq TTS - use audio URL
           setAudioUrl(result.audioUrl);
+          setWebSpeechResult(null);
         } else if ('webSpeech' in result && result.utterance) {
           // Web Speech API fallback
-          if (autoPlay && 'speak' in result) {
-            result.speak?.();
-            setIsPlaying(true);
-          }
-          // For Web Speech API, we don't have an audio URL
+          console.log('Using Web Speech API fallback');
+          setWebSpeechResult(result);
           setAudioUrl('web-speech-fallback');
         }
       } else {
@@ -110,7 +145,32 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
   };
   
   const togglePlayPause = () => {
-    if (audioRef.current) {
+    if (webSpeechResult) {
+      // Handle Web Speech API
+      if (isPlaying) {
+        console.log('Stopping Web Speech');
+        window.speechSynthesis.cancel();
+        setIsPlaying(false);
+      } else {
+        console.log('Starting Web Speech');
+        const utterance = webSpeechResult.utterance;
+        if (utterance) {
+          // Set up event listeners
+          utterance.onstart = () => setIsPlaying(true);
+          utterance.onend = () => {
+            setIsPlaying(false);
+            if (onComplete) onComplete();
+          };
+          utterance.onerror = () => {
+            setError('Speech synthesis error occurred');
+            setIsPlaying(false);
+          };
+          
+          webSpeechResult.speak?.();
+        }
+      }
+    } else if (audioRef.current) {
+      // Handle audio element
       if (isPlaying) {
         audioRef.current.pause();
       } else {
@@ -124,13 +184,32 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
   };
   
   const toggleMute = () => {
-    if (audioRef.current) {
+    if (webSpeechResult) {
+      // For Web Speech API, we can only stop/start, not mute
+      if (isPlaying) {
+        window.speechSynthesis.cancel();
+        setIsPlaying(false);
+        setIsMuted(true);
+      } else if (isMuted) {
+        // Restart speech when unmuting
+        const utterance = webSpeechResult.utterance;
+        if (utterance) {
+          utterance.onstart = () => setIsPlaying(true);
+          utterance.onend = () => {
+            setIsPlaying(false);
+            if (onComplete) onComplete();
+          };
+          webSpeechResult.speak?.();
+          setIsMuted(false);
+        }
+      }
+    } else if (audioRef.current) {
       audioRef.current.muted = !audioRef.current.muted;
       setIsMuted(!isMuted);
     }
   };
   
-  const handleAudioEnded = () => {
+  const handleMediaEnded = () => {
     setIsPlaying(false);
     if (onComplete) {
       onComplete();
@@ -192,7 +271,7 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
             ref={audioRef}
             src={audioUrl}
             className="hidden"
-            onEnded={handleAudioEnded}
+            onEnded={handleMediaEnded}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
           />

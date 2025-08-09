@@ -392,6 +392,8 @@ export const imageAnalysisService = {
   analyzeImageMood: async (imageInput: Blob | File | string) => {
     try {
       console.log('🖼️ Starting mood analysis with Groq Vision API');
+      console.log('📋 Image input type:', typeof imageInput);
+      console.log('📋 Image input details:', imageInput instanceof File ? `File: ${imageInput.name}, size: ${imageInput.size}` : 'Other type');
       
       let imageUrl: string;
       
@@ -435,7 +437,7 @@ export const imageAnalysisService = {
       }
 
       const payload = {
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        model: "llama-3.2-11b-vision-preview",
         temperature: 0.3,
         max_completion_tokens: 512,
         messages: [
@@ -475,10 +477,13 @@ Example: "The person appears somewhat tired with a gentle expression, suggesting
       });
 
       console.log('📊 Vision Response status:', response.status);
+      console.log('📊 Vision Response headers:', response.headers);
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Vision API error:', errorText);
+        console.error('❌ Vision API status:', response.status);
+        console.error('❌ Vision API status text:', response.statusText);
         throw new Error(`Vision API error: ${response.status} - ${errorText}`);
       }
 
@@ -630,12 +635,17 @@ export const mentalHealthService = {
       if (userImage) {
         try {
           console.log('🖼️ Image provided, analyzing mood...');
+          console.log('📷 Image type:', userImage.constructor.name);
+          console.log('📏 Image size:', userImage.size);
           
           // Use the new mood analysis feature
           const moodResult = await imageAnalysisService.analyzeImageMood(userImage);
           
+          console.log('🔍 Mood analysis result:', moodResult);
+          
           if (moodResult.success) {
             console.log('✅ Mood analysis successful');
+            console.log('📝 Mood analysis content:', moodResult.moodAnalysis);
             
             // Store the image for reference 
             imageUrl = URL.createObjectURL(userImage);
@@ -653,13 +663,15 @@ export const mentalHealthService = {
             const lastMessage = enhancedMessages[enhancedMessages.length - 1];
             if (lastMessage && lastMessage.role === 'user') {
               // Add mood context as a system message before the user's message
-              enhancedMessages.splice(-1, 0, {
+              const systemMessage = {
                 role: "system",
                 content: `[Visual Context] From the shared photo: ${moodResult.moodAnalysis}. Use this as subtle context (5-10% weight) to inform your response tone and approach. Don't explicitly mention the visual analysis unless directly relevant.`
-              });
+              };
+              enhancedMessages.splice(-1, 0, systemMessage);
+              console.log('📋 Added system message with visual context:', systemMessage.content);
             }
           } else {
-            console.log('⚠️ Mood analysis failed, using fallback');
+            console.log('⚠️ Mood analysis failed:', moodResult.error);
             imageUrl = URL.createObjectURL(userImage);
             
             // Fallback response

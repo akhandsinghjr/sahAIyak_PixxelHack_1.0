@@ -44,6 +44,7 @@ const SpeechAvatar: React.FC<SpeechAvatarProps> = ({
   // Media State
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [webSpeechResult, setWebSpeechResult] = useState<any>(null);
   const [useAvatarMode, setUseAvatarMode] = useState(initialAvatarMode);
   
   // Refs
@@ -69,6 +70,10 @@ const SpeechAvatar: React.FC<SpeechAvatarProps> = ({
       if (videoRef.current) {
         videoRef.current.pause();
         videoRef.current.currentTime = 0;
+      }
+      // Stop Web Speech API if it's running
+      if (window.speechSynthesis && window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
       }
       setIsPlaying(false);
     };
@@ -161,9 +166,36 @@ const SpeechAvatar: React.FC<SpeechAvatarProps> = ({
           }
         } else if ('webSpeech' in speechResult && speechResult.utterance) {
           // Web Speech API fallback
-          if (autoPlay && 'speak' in speechResult) {
-            speechResult.speak?.();
-            setIsPlaying(true);
+          console.log('Using Web Speech API fallback in SpeechAvatar');
+          setWebSpeechResult(speechResult);
+          setAudioUrl('web-speech-fallback');
+          
+          // Set up event listeners for Web Speech API
+          const utterance = speechResult.utterance;
+          if (utterance) {
+            utterance.onstart = () => {
+              console.log('Web Speech started in avatar');
+              setIsPlaying(true);
+            };
+            
+            utterance.onend = () => {
+              console.log('Web Speech ended in avatar');
+              setIsPlaying(false);
+              if (onComplete) {
+                onComplete();
+              }
+            };
+            
+            utterance.onerror = (event: any) => {
+              console.error('Web Speech error in avatar:', event);
+              setError('Speech synthesis error occurred');
+              setIsPlaying(false);
+            };
+            
+            // Start speaking if autoPlay is enabled
+            if (autoPlay) {
+              speechResult.speak?.();
+            }
           }
         }
       } else {
