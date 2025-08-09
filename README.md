@@ -1,5 +1,5 @@
 # सह-AI-यक (Sahayak): Mental Health Assistant
-### Website  : [https://sahaiyak-hackvita-3-0.onrender.com](https://sahaiyak-pixxelhack-1-0.onrender.com/)
+### Website  : https://sahaiyak-pixxelhack-1-0.onrender.com/
 
 
 ![Screenshot 2025-03-31 103711](https://github.com/user-attachments/assets/3b53fc30-0338-45a1-a570-8763f2b86d99)
