@@ -1,4 +1,31 @@
-import { toast } from "sonner";
+import { toast } from 'sonner';
+
+// Assessment data types
+interface AssessmentFactor {
+  id: string;
+  name: string;
+  description: string;
+  value: number;
+  icon?: React.ReactNode; // Optional since we don't pass it in router state
+  color: string;
+}
+
+interface AnalysisData {
+  summary: string;
+  strengths: Array<{ title: string; description: string }>;
+  concernAreas: Array<{ title: string; description: string }>;
+  recommendations: Array<{ title: string; description: string }>;
+  professionalAdvice: string;
+  overallStatus: 'excellent' | 'good' | 'moderate' | 'concerning';
+  overallScore?: number;
+  severity?: string;
+}
+
+interface AssessmentData {
+  factors: AssessmentFactor[];
+  analysis: AnalysisData;
+  timestamp: string;
+}
 
 /**
  * AI Services Integration
@@ -389,14 +416,51 @@ export const mentalHealthService = {
   },
 
   // Initialize the conversation with the mental health assistant
-  startConversation: async () => {
+  startConversation: async (assessmentData?: AssessmentData) => {
     try {
+      // Build context from assessment data if available
+      let contextMessage = "Hi";
+      let systemPrompt = "You are a supportive mental health assistant. Be warm, empathetic, and conversational. Always mention that you're not a replacement for professional help.";
+      
+      if (assessmentData) {
+        console.log('Using assessment data for context:', assessmentData);
+        
+        // Extract assessment information
+        const factors = assessmentData.factors || [];
+        const analysis = assessmentData.analysis;
+        
+        // Create context about the user's assessment
+        let assessmentContext = "";
+        if (factors.length > 0) {
+          const factorScores = factors.map((f: AssessmentFactor) => `${f.name}: ${f.value}/10`).join(", ");
+          assessmentContext += `The user recently completed a mental health assessment with scores: ${factorScores}. `;
+        }
+        
+        if (analysis) {
+          if (analysis.overallScore) {
+            assessmentContext += `Their overall mental health score was ${analysis.overallScore}/10. `;
+          }
+          if (analysis.overallStatus) {
+            assessmentContext += `Overall status: ${analysis.overallStatus}. `;
+          }
+          if (analysis.recommendations && analysis.recommendations.length > 0) {
+            const topRecommendations = analysis.recommendations.slice(0, 2).map(r => r.title).join(", ");
+            assessmentContext += `Key recommendations include: ${topRecommendations}. `;
+          }
+        }
+        
+        if (assessmentContext) {
+          systemPrompt += ` ${assessmentContext}Use this context to provide personalized support, but don't immediately reference the assessment unless relevant to the conversation.`;
+          contextMessage = "Hi, I just completed my mental health assessment and would like to talk.";
+        }
+      }
+
       // Use Groq Llama API
       const chatCompletion = await callGroqProxy([
-        { role: "system", content: "You are a supportive mental health assistant. Be warm, empathetic, and conversational. Always mention that you're not a replacement for professional help." },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: "Hi"
+          content: contextMessage
         }
       ]);
 
@@ -502,6 +566,91 @@ export const mentalHealthService = {
       } else {
         toast.error("Conversation Error", {
           description: "There was a problem processing your message. Please try again.",
+        });
+      }
+      throw error;
+    }
+  },
+
+  // Generate a personalized 10-day mental health improvement plan
+  generateImprovementPlan: async (assessmentData: AssessmentData) => {
+    try {
+      console.log('Generating 10-day plan with assessment data:', assessmentData);
+      
+      // Build detailed context from assessment
+      const factors = assessmentData.factors || [];
+      const analysis = assessmentData.analysis;
+      
+      let contextPrompt = "Create a personalized 10-day mental health improvement plan based on this assessment:\n\n";
+      
+      // Add factor scores
+      if (factors.length > 0) {
+        contextPrompt += "Assessment Scores:\n";
+        factors.forEach(factor => {
+          contextPrompt += `- ${factor.name}: ${factor.value}/10\n`;
+        });
+        contextPrompt += "\n";
+      }
+      
+      // Add analysis summary
+      if (analysis) {
+        contextPrompt += `Overall Status: ${analysis.overallStatus}\n`;
+        if (analysis.summary) {
+          contextPrompt += `Summary: ${analysis.summary}\n`;
+        }
+        
+        if (analysis.concernAreas?.length > 0) {
+          contextPrompt += "\nKey Concern Areas:\n";
+          analysis.concernAreas.forEach(concern => {
+            contextPrompt += `- ${concern.title}: ${concern.description}\n`;
+          });
+        }
+        
+        if (analysis.strengths?.length > 0) {
+          contextPrompt += "\nStrengths to Build Upon:\n";
+          analysis.strengths.forEach(strength => {
+            contextPrompt += `- ${strength.title}: ${strength.description}\n`;
+          });
+        }
+      }
+      
+      contextPrompt += `\nPlease create a structured 10-day mental health improvement plan with:
+- Daily activities and exercises
+- Specific goals for each day
+- Progressive difficulty
+- Focus on the identified concern areas
+- Building upon existing strengths
+- Practical, actionable steps
+- Time estimates for each activity
+- Tips for staying motivated
+
+Format the response as a clear, day-by-day plan that is easy to follow.`;
+
+      const chatCompletion = await callGroqProxy([
+        { 
+          role: "system", 
+          content: "You are an expert mental health coach who creates personalized, evidence-based improvement plans. Focus on practical, achievable daily activities that build positive mental health habits." 
+        },
+        { role: "user", content: contextPrompt }
+      ]);
+
+      const planContent = chatCompletion.choices[0].message.content;
+      
+      return {
+        plan: planContent,
+        rawResponse: chatCompletion,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error("Error generating improvement plan:", error);
+      
+      if (error instanceof Error && (error.message.includes('429') || error.message.includes('529'))) {
+        toast.error("Service Busy", {
+          description: "The plan generation service is currently busy. Please try again in a moment.",
+        });
+      } else {
+        toast.error("Plan Generation Error", {
+          description: "Failed to generate your improvement plan. Please try again.",
         });
       }
       throw error;

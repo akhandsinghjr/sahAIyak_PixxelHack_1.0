@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Slider } from "@/components/ui/slider";
 import { Progress } from "@/components/ui/progress";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend, Cell } from 'recharts';
-import { Brain, HeartPulse, ArrowRight, Moon, Sun, Battery, Coffee, Users, Home, Dumbbell, MessageSquare } from "lucide-react";
+import { Brain, HeartPulse, ArrowRight, Moon, Sun, Battery, Coffee, Users, Home, Dumbbell, MessageSquare, Calendar } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { azureAIServices } from "@/services/azure-ai";
 import { useToast } from "@/hooks/use-toast";
@@ -419,6 +419,40 @@ const Analysis = () => {
     if (lowercaseTitle.includes('anxiety') || lowercaseTitle.includes('stress')) 
       return <HeartPulse className="h-5 w-5" />;
     return <Lightbulb className="h-5 w-5" />;
+  };
+  
+  // Generate 10-day improvement plan
+  const generateImprovementPlan = async () => {
+    if (!analysisData) {
+      toast({
+        title: "Error",
+        description: "Please complete the assessment first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create serializable assessment data
+    const serializableFactors = factors.map(factor => ({
+      id: factor.id,
+      name: factor.name,
+      description: factor.description,
+      value: factor.value,
+      color: factor.color
+    }));
+
+    const assessmentData = {
+      factors: serializableFactors,
+      analysis: analysisData,
+      timestamp: new Date().toISOString()
+    };
+
+    // Navigate to the improvement plan page with assessment data
+    navigate('/improvement-plan', { 
+      state: { 
+        assessmentData: assessmentData
+      }
+    });
   };
   
   // Get color scheme based on overall status
@@ -872,15 +906,48 @@ const Analysis = () => {
                     <p className="text-sm text-blue-700 dark:text-blue-400 mb-4">
                       For more personalized support and to discuss your assessment results, chat with our AI mental health assistant.
                     </p>
-                    <Button 
-                      onClick={() => navigate('/chat')}
-                      className="w-full"
-                    >
-                      <div className="flex items-center gap-2">
-                        <MessageSquare className="h-4 w-4" />
-                        <span>Chat with Mental Health Assistant</span>
-                      </div>
-                    </Button>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <Button 
+                        onClick={() => {
+                          // Create serializable version of factors without React icons
+                          const serializableFactors = factors.map(factor => ({
+                            id: factor.id,
+                            name: factor.name,
+                            description: factor.description,
+                            value: factor.value,
+                            color: factor.color
+                            // Excluding icon as it's not serializable
+                          }));
+                          
+                          navigate('/chat', { 
+                            state: { 
+                              assessmentData: {
+                                factors: serializableFactors,
+                                analysis: analysisData,
+                                timestamp: new Date().toISOString()
+                              }
+                            }
+                          });
+                        }}
+                        className="flex-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="h-4 w-4" />
+                          <span>Chat with Assistant</span>
+                        </div>
+                      </Button>
+                      
+                      <Button 
+                        onClick={generateImprovementPlan}
+                        variant="outline"
+                        className="flex-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          <span>Get 10-Day Plan</span>
+                        </div>
+                      </Button>
+                    </div>
                   </div>
                   
                   <Button 

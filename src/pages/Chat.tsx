@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,6 +14,9 @@ import SpeechInput from "@/components/SpeechInput";
 import Navbar from "@/components/navbar";
 
 const Chat = () => {
+  const location = useLocation();
+  const assessmentData = location.state?.assessmentData;
+  
   // State for chat functionality
   const [chatMessages, setChatMessages] = useState<Array<{role: string, content: string, timestamp?: Date, hasImage?: boolean, pendingImage?: boolean, imageUrl?: string}>>([]);
   const [currentMessage, setCurrentMessage] = useState("");
@@ -60,7 +64,8 @@ const Chat = () => {
   const startChat = async () => {
     setLoading(true);
     try {
-      const initialResponse = await azureAIServices.mentalHealth.startConversation();
+      console.log('Starting chat with assessment data:', assessmentData);
+      const initialResponse = await azureAIServices.mentalHealth.startConversation(assessmentData);
       
       setChatMessages([
         {

@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Chat from "./pages/Chat";
 import Analysis from "./pages/Analysis"; // Add import for the new Analysis page
+import ImprovementPlan from "./pages/ImprovementPlan"; // Add import for the improvement plan page
 import Navigation from "./components/Navigation";
 import { ThemeProvider } from "@/components/theme-provider"
 import Footer2 from "./components/Footer";
@@ -29,6 +30,7 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/chat" element={<Chat />} />
               <Route path="/analysis" element={<Analysis />} /> {/* Add new route */}
+              <Route path="/improvement-plan" element={<ImprovementPlan />} /> {/* Add improvement plan route */}
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
