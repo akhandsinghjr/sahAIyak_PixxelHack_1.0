@@ -43,7 +43,7 @@ const Chat = () => {
   const [pendingMessage, setPendingMessage] = useState("");
 
   // Add state for speech functionality
-  const [useSpeech, setUseSpeech] = useState(true);
+  const [useSpeech, setUseSpeech] = useState(false);
   const [activeAudioMessage, setActiveAudioMessage] = useState<string | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<string>("Arista-PlayAI");
 
