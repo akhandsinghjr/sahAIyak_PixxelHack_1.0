@@ -302,42 +302,16 @@ const Chat = () => {
         content: msg.content,
       }));
       
-      // Add enhanced special instructions for the AI to check for inconsistencies 
-      // between the text and facial expression
-      if (imageFile) {
-        apiMessages.push({
-          role: "system",
-          content: `For this message, the user has shared both text and a facial image. 
-            The user's message was: "${messageText}"
-            
-            IMPORTANT INSTRUCTIONS FOR EMOTIONAL ANALYSIS:
-            
-            1. Carefully analyze the user's facial expression, looking for signs of:
-               - Sadness (downturned mouth, drooping eyelids, furrowed brow)
-               - Anxiety (tense features, worried eyes, tight jaw)
-               - Fatigue (dark circles, slow blinking, lack of energy)
-               - Forced happiness (smile that doesn't reach the eyes)
-               - Emotional flatness (blank expression, minimal movement)
-            
-            2. Compare these visual cues with the emotional tone of their text message
-            
-            3. Be particularly vigilant if:
-               - They claim to be "fine" or "okay" but look troubled
-               - They minimize problems while showing signs of distress
-               - Their emotional expression doesn't match their words
-               - They use positive language but appear exhausted or sad
-            
-            4. When you detect such inconsistencies (and assume they often exist),
-               gently acknowledge this in your response without directly stating
-               you're analyzing their photo. Use phrases like:
-               
-               "I sense there might be more to what you're feeling..."
-               "I'm noticing some additional emotions that might be worth exploring..."
-               "Your experience seems more complex than words alone can express..."
-               
-            Aim to create a safe space for them to express their true feelings.`
-        });
-      }
+      // Add the current user message to the conversation
+      apiMessages.push({
+        role: "user",
+        content: messageText
+      });
+      
+      console.log("💬 API messages being sent:", apiMessages);
+      
+      // Just add the user's message - no special image analysis instructions
+      // The AI will respond naturally to the text, and images are just for visual context
       
       // Send message and image to the mental health service
       let response;
@@ -405,6 +379,9 @@ const Chat = () => {
       
       // Add assistant's response to chat
       const assistantResponse = response.message;
+      console.log("🎯 Assistant response received:", assistantResponse);
+      console.log("🎯 Full response object:", response);
+      
       setChatMessages(prevMessages => [
         ...prevMessages,
         {

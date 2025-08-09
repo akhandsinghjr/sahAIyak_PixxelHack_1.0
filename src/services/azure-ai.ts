@@ -1,10 +1,8 @@
 import { toast } from "sonner";
-import {} from "dotenv";
-import { InferenceClient } from "@huggingface/inference";
 
 /**
  * AI Services Integration
- * This file contains services for connecting to Hugging Face AI APIs
+ * This file contains services for connecting to Groq Llama AI APIs
  */
 
 // Environment variable access helper for browser environments
@@ -29,19 +27,33 @@ const getEnvVariable = (key: string, defaultValue: string = ''): string => {
   return defaultValue;
 };
 
-// Get Hugging Face API key from environment variables without hardcoding
-const HF_API_KEY = getEnvVariable('HF_API_KEY', '');
-
-// Initialize Hugging Face client with API key
-const hfClient = new InferenceClient(HF_API_KEY);
-
-// Add error handling if API key is missing
-if (!HF_API_KEY) {
-  console.warn(
-    "No Hugging Face API key found in environment variables. API calls will likely fail. " +
-    "Make sure you have a .env file with VITE_HF_API_KEY in your project root directory."
-  );
-}
+// Client calls Vite dev proxy; no Groq SDK in browser
+const callGroqProxy = async (messages: Array<{ role: string; content: string }>, model = "llama-3.3-70b-versatile") => {
+  console.log(`🚀 Making Groq proxy call to /groq/v1/chat/completions`);
+  console.log(`📝 Model: ${model}`);
+  console.log(`💬 Messages count: ${messages.length}`);
+  
+  const payload = { messages, model };
+  console.log(`📦 Request payload:`, payload);
+  
+  const resp = await fetch('/groq/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  
+  console.log(`📊 Response status: ${resp.status} ${resp.statusText}`);
+  
+  if (!resp.ok) {
+    const txt = await resp.text();
+    console.error('❌ Groq proxy failure:', resp.status, txt);
+    throw new Error(`Groq proxy error ${resp.status}: ${txt}`);
+  }
+  
+  const result = await resp.json();
+  console.log(`✅ Groq proxy success:`, result);
+  return result;
+};
 
 // Add TypeScript type definitions for global env vars
 declare global {
@@ -52,43 +64,64 @@ declare global {
 
 /**
  * Validate API connection
- * Tests if the Hugging Face API configuration is valid using Zephyr model
+ * Tests if the Groq API configuration is valid using Llama model
  */
 export const validateApiConnection = async () => {
   try {
+    console.log("🔄 Starting Groq connection validation...");
+    console.log("🌐 Proxy URL: /groq/v1/chat/completions");
+    
     toast.info("Validating AI Connection", { 
-      description: "Testing connection to Hugging Face Zephyr..." 
+      description: "Testing connection to Groq Llama..." 
     });
     
-    // Send a simple test prompt to the Zephyr model
-    const chatCompletion = await hfClient.chatCompletion({
-      provider: "hf-inference",
-      model: "HuggingFaceH4/zephyr-7b-beta",
-      messages: [
-        { role: "user", content: "Respond with 'Connection valid' if you receive this message." }
-      ],
-      max_tokens: 50,
-      temperature: 0.1,
-    });
+    const testMessages = [
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: "Respond with 'Connection valid' if you receive this message." }
+    ];
     
-    console.log("Validation response:", chatCompletion);
+    console.log("📤 Sending test request with messages:", testMessages);
+    
+    const chatCompletion = await callGroqProxy(testMessages);
+    
+    console.log("📥 Received response:", chatCompletion);
     
     if (chatCompletion && chatCompletion.choices && chatCompletion.choices.length > 0) {
-      toast.success("Hugging Face Connection Valid", { 
-        description: "Successfully connected to Zephyr model" 
+      const responseContent = chatCompletion.choices[0].message?.content || '';
+      console.log("✅ Response content:", responseContent);
+      
+      toast.success("Groq Connection Valid", { 
+        description: `Successfully connected to Llama model. Response: "${responseContent.slice(0, 50)}..."` 
       });
       return true;
     } else {
-      console.error("Validation response invalid:", chatCompletion);
+      console.error("❌ Invalid response structure:", chatCompletion);
       toast.error("Connection Invalid", { 
-        description: "Received an invalid response from Zephyr model" 
+        description: "Received an invalid response from Groq Llama" 
       });
       return false;
     }
   } catch (error) {
-    console.error("Error validating Hugging Face API connection:", error);
+    console.error("❌ Error validating Groq API connection:", error);
+    
+    let errorMessage = "Check network and Groq service availability";
+    
+    if (error instanceof Error) {
+      if (error.message.includes('401')) {
+        errorMessage = "API key is invalid or missing";
+      } else if (error.message.includes('403')) {
+        errorMessage = "API key lacks permission or quota exceeded";
+      } else if (error.message.includes('429')) {
+        errorMessage = "Rate limit exceeded, try again later";
+      } else if (error.message.includes('500')) {
+        errorMessage = "Groq server error";
+      } else if (error.message.includes('fetch failed')) {
+        errorMessage = "Network error - check dev server and proxy config";
+      }
+    }
+    
     toast.error("Connection Failed", { 
-      description: "Check network and Hugging Face service availability" 
+      description: errorMessage
     });
     return false;
   }
@@ -185,28 +218,17 @@ export const computerVisionService = {
 
 /**
  * Language Service
- * Natural language processing using Hugging Face
+ * Natural language processing using Groq Llama
  */
 export const languageService = {
   analyzeSentiment: async (text: string) => {
     try {
-      console.log("Sending sentiment analysis request to Hugging Face Zephyr");
-      
       // Create a prompt for sentiment analysis
       const sentimentPrompt = `Analyze the sentiment of the following text. Rate it as positive, negative, or neutral with a confidence score between 0 and 1: "${text}"`;
-      
-      // Use Hugging Face Inference API
-      const chatCompletion = await hfClient.chatCompletion({
-        provider: "hf-inference",
-        model: "HuggingFaceH4/zephyr-7b-beta",
-        messages: [
-          { role: "user", content: sentimentPrompt }
-        ],
-        max_tokens: 150,
-        temperature: 0.3,
-      });
-      
-      console.log("Sentiment analysis response from Zephyr:", chatCompletion);
+      const chatCompletion = await callGroqProxy([
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: sentimentPrompt }
+      ]);
       
       return {
         sentiment: chatCompletion.choices[0].message.content,
@@ -227,17 +249,10 @@ export const languageService = {
     try {
       // Create a prompt for key phrase extraction
       const keyPhrasesPrompt = `Extract and list the key phrases from the following text. Return only the key phrases as a JSON array: "${text}"`;
-      
-      // Use Hugging Face Inference API
-      const chatCompletion = await hfClient.chatCompletion({
-        provider: "hf-inference",
-        model: "HuggingFaceH4/zephyr-7b-beta",
-        messages: [
-          { role: "user", content: keyPhrasesPrompt }
-        ],
-        max_tokens: 150,
-        temperature: 0.3,
-      });
+      const chatCompletion = await callGroqProxy([
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: keyPhrasesPrompt }
+      ]);
       
       return {
         keyPhrases: chatCompletion.choices[0].message.content,
@@ -253,17 +268,10 @@ export const languageService = {
     try {
       // Create a prompt for entity recognition
       const entitiesPrompt = `Identify and categorize entities in the following text. Return the results as a JSON object with entity types as keys and arrays of entities as values: "${text}"`;
-      
-      // Use Hugging Face Inference API
-      const chatCompletion = await hfClient.chatCompletion({
-        provider: "hf-inference",
-        model: "HuggingFaceH4/zephyr-7b-beta",
-        messages: [
-          { role: "user", content: entitiesPrompt }
-        ],
-        max_tokens: 250,
-        temperature: 0.3,
-      });
+      const chatCompletion = await callGroqProxy([
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: entitiesPrompt }
+      ]);
       
       return {
         entities: chatCompletion.choices[0].message.content,
@@ -277,26 +285,18 @@ export const languageService = {
 };
 
 /**
- * GPT Models Service using Hugging Face
+ * GPT Models Service using Groq Llama
  */
 export const gptService = {
-  chat: async (prompt: string, model: string = "zephyr") => {
+  chat: async (prompt: string, model: string = "llama-3.3-70b-versatile") => {
     try {
-      console.log(`Using Hugging Face model: ${model === "gpt-4" ? "Zephyr 7B (advanced)" : "Zephyr 7B"}`);
-      
-      // Format the messages properly for Zephyr
       const messages = [
         { role: "user", content: prompt }
       ];
-      
-      // Use Hugging Face Inference API
-      const chatCompletion = await hfClient.chatCompletion({
-        provider: "hf-inference",
-        model: "HuggingFaceH4/zephyr-7b-beta",
-        messages: messages,
-        max_tokens: model === "gpt-4" ? 800 : 500, // Use larger context for "gpt-4" equivalent
-        temperature: model === "gpt-4" ? 0.7 : 0.5, // Lower temperature for GPT-3.5 equivalent
-      });
+      const chatCompletion = await callGroqProxy([
+        { role: "system", content: "You are a helpful assistant." },
+        ...messages
+      ], model);
       
       // Format the response to match the structure expected by the application
       return {
@@ -306,22 +306,18 @@ export const gptService = {
             finish_reason: "stop"
           }
         ],
-        model: "HuggingFaceH4/zephyr-7b-beta",
-        usage: {
-          completion_tokens: chatCompletion.usage?.completion_tokens || 0,
-          prompt_tokens: chatCompletion.usage?.prompt_tokens || 0,
-          total_tokens: chatCompletion.usage?.total_tokens || 0
-        }
+        model,
+        usage: chatCompletion.usage || {}
       };
     } catch (error) {
-      console.error("Error with Hugging Face Zephyr chat:", error);
+      console.error("Error with Groq Llama chat:", error);
       throw error;
     }
   },
 };
 
 /**
- * Image Analysis Service using Hugging Face
+ * Image Analysis Service using Groq Llama
  */
 export const imageAnalysisService = {
   analyzeImageSentiment: async (imageInput: Blob | File | string) => {
@@ -345,19 +341,11 @@ export const imageAnalysisService = {
         Keep your response brief (2-3 sentences) and non-judgmental.
       `;
       
-      // Use Hugging Face Inference API
-      const chatCompletion = await hfClient.chatCompletion({
-        provider: "hf-inference",
-        model: "HuggingFaceH4/zephyr-7b-beta", 
-        messages: [
-          { 
-            role: "user", 
-            content: prompt
-          }
-        ],
-        max_tokens: 150,
-        temperature: 0.7,
-      });
+      // Use Groq Llama API
+      const chatCompletion = await callGroqProxy([
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: prompt }
+      ]);
       
       return {
         sentiment: chatCompletion.choices[0].message.content,
@@ -380,7 +368,7 @@ export const imageAnalysisService = {
 };
 
 /**
- * Mental Health Service using Hugging Face
+ * Mental Health Service using Groq Llama
  */
 export const mentalHealthService = {
   // Implement a cooldown mechanism to prevent rapid API calls
@@ -403,24 +391,14 @@ export const mentalHealthService = {
   // Initialize the conversation with the mental health assistant
   startConversation: async () => {
     try {
-      // Use Hugging Face Inference API
-      const chatCompletion = await hfClient.chatCompletion({
-        provider: "hf-inference",
-        model: "HuggingFaceH4/zephyr-7b-beta",
-        messages: [
-          {
-            role: "user",
-            content: `Act as an AI mental health assistant. Your purpose is to provide supportive conversation, 
-            preliminary assessment, and general wellness advice. Begin by introducing yourself and asking 2-3 
-            gentle screening questions about how the person is feeling today, their sleep patterns, and stress levels. 
-            Keep your responses compassionate, non-judgmental, and concise (under 100 words). After initial questions, 
-            suggest that a photo could help you better understand their current state, but make this optional. 
-            Important: Always clarify you are not a replacement for professional mental health services.`
-          }
-        ],
-        max_tokens: 250,
-        temperature: 0.7,
-      });
+      // Use Groq Llama API
+      const chatCompletion = await callGroqProxy([
+        { role: "system", content: "You are a supportive mental health assistant. Be warm, empathetic, and conversational. Always mention that you're not a replacement for professional help." },
+        {
+          role: "user",
+          content: "Hi"
+        }
+      ]);
 
       const initialMessage = chatCompletion.choices[0].message.content;
       
@@ -469,69 +447,40 @@ export const mentalHealthService = {
           // Store the image for reference 
           imageUrl = URL.createObjectURL(userImage);
           
-          // Analyze the user's image for sentiment - with robust error handling
-          try {
-            imageAnalysis = await imageAnalysisService.analyzeImageSentiment(userImage);
-          } catch (imageAnalysisError) {
-            console.error("Image sentiment analysis failed, using fallback:", imageAnalysisError);
-            imageAnalysis = {
-              sentiment: "I notice you've shared an image with me. While I can't analyze it in detail, I'm here to listen to how you're feeling in your own words.",
-              visionAnalysis: {
-                description: { captions: [{ text: "a shared photo" }] }
-              }
-            };
-          }
+          // Store the image for reference but don't analyze it
+          imageUrl = URL.createObjectURL(userImage);
           
-          // Add image context to the conversation regardless of analysis success
-          // Find the last user message
-          const lastUserMessageIndex = enhancedMessages.findIndex(
-            (msg, i, arr) => msg.role === "user" && (i === arr.length - 1 || arr[i + 1].role === "assistant")
-          );
+          // Don't do any sentiment analysis - just note that there's an image
+          imageAnalysis = {
+            sentiment: null, // No analysis
+            visionAnalysis: {
+              description: { captions: [{ text: "a shared photo" }] }
+            }
+          };
           
-          if (lastUserMessageIndex !== -1) {
-            const userText = enhancedMessages[lastUserMessageIndex].content;
-            
-            // Add simple image context - avoiding API dependencies
-            enhancedMessages[lastUserMessageIndex].content = `${userText}\n\nI'm also sharing a photo of myself.`;
-          }
+          // Don't modify the user's message content - let them say what they want to say
         } catch (imageError) {
           console.error("Error processing image in conversation:", imageError);
-          toast.warning("Image Processing", {
-            description: "I'll continue our conversation without analyzing the image.",
-          });
+          // No need to show warning since we're not analyzing anyway
         }
       }
       
-      // Format conversation for Zephyr
-      let fullPrompt = `You are an AI mental health assistant that prioritizes identifying hidden distress. Your purpose is to provide 
-      supportive conversation while carefully watching for signs of concealed emotional struggle.
+      // Use proper chat completion format with message history
+      // Just pass the conversation messages directly to the API
       
-      Most people tend to hide their true emotional state with phrases like "I'm fine" or "just tired" - be gently
-      suspicious of such statements, especially in mental health contexts.
+      console.log("📤 Final messages being sent to Groq:", enhancedMessages);
+      console.log("📤 Message count:", enhancedMessages.length);
       
-      Keep your responses compassionate, non-judgmental, and concise (under 150 words). Suggest tailored mindfulness
-      techniques or coping strategies when appropriate.
-      
-      Important: Always clarify you are not a replacement for professional mental health services.
-      
-      Previous conversation:
-      `;
-      
-      // Add the conversation history
-      enhancedMessages.forEach(msg => {
-        fullPrompt += `\n${msg.role === 'user' ? 'Person' : 'Assistant'}: ${msg.content}`;
-      });
-      
-      fullPrompt += `\n\nRespond to the person's most recent message with empathy and insight:`;
-      
-      // Use Hugging Face Inference API
-      const chatCompletion = await hfClient.chatCompletion({
-        provider: "hf-inference",
-        model: "HuggingFaceH4/zephyr-7b-beta",
-        messages: [{ role: "user", content: fullPrompt }],
-        max_tokens: 350,
-        temperature: 0.7,
-      });
+      const chatCompletion = await callGroqProxy([
+        { role: "system", content: "You are a supportive mental health assistant. Be natural and conversational. Always mention that you're not a replacement for professional help when appropriate." },
+        ...enhancedMessages
+      ]);
+
+      console.log("🔍 Groq response structure:", chatCompletion);
+      console.log("📝 Response choices:", chatCompletion.choices);
+      console.log("📝 First choice:", chatCompletion.choices?.[0]);
+      console.log("📝 First choice message:", chatCompletion.choices?.[0]?.message);
+      console.log("📝 Response content:", chatCompletion.choices?.[0]?.message?.content);
 
       return {
         message: chatCompletion.choices[0].message.content,
@@ -561,144 +510,28 @@ export const mentalHealthService = {
 };
 
 /**
- * Speech Service using Hugging Face API
+ * Speech Service using browser Web Speech API
  */
 export const speechService = {
-  textToSpeech: async (text: string, voiceName: string = "female") => {
-    try {
-      console.log("Using Hugging Face model for text-to-speech");
-      
-      // Select model based on voice preference
-      let modelId = "espnet/kan-bayashi_ljspeech_vits"; // Default model (female voice)
-      
-      if (voiceName === "male") {
-        modelId = "speechbrain/tts-tacotron2-ljspeech"; // Male voice
-      } else if (voiceName === "multilingual" || voiceName.includes("multilingual")) {
-        modelId = "facebook/mms-tts-eng"; // Multilingual model
-      } else if (voiceName === "high-quality" || voiceName.includes("high")) {
-        modelId = "facebook/yourtts-multi-dialect"; // High quality voice
-      } else if (voiceName !== "female" && voiceName !== "default") {
-        // Try to map specific voice name to a model if it's not one of our standard categories
-        const voiceModelMap: Record<string, string> = {
-          "british": "facebook/mms-tts-eng",
-          "american": "espnet/kan-bayashi_ljspeech_vits",
-          "deep": "speechbrain/tts-tacotron2-ljspeech",
-          "clear": "facebook/yourtts-multi-dialect"
+  textToSpeech: async (text: string) => {
+    // Web Speech API only (client-side)
+    if (window.speechSynthesis) {
+      try {
+        const utterance = new SpeechSynthesisUtterance(text);
+        return {
+          success: true,
+          webSpeech: true,
+          utterance,
         };
-        
-        // Loop through our map and see if the requested voice name contains any of our keywords
-        for (const [keyword, model] of Object.entries(voiceModelMap)) {
-          if (voiceName.toLowerCase().includes(keyword)) {
-            modelId = model;
-            break;
-          }
-        }
+      } catch (error) {
+        console.error("Web Speech synthesis failed:", error);
+        return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
       }
-      
-      console.log(`Selected TTS model: ${modelId} for voice preference: ${voiceName}`);
-      
-      // Configure API request to Hugging Face
-      const response = await fetch(
-        `https://api-inference.huggingface.co/models/${modelId}`,
-        {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${HF_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ inputs: text }),
-        }
-      );
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(`Hugging Face API error: ${error.error || 'Unknown error'}`);
-      }
-      
-      // The response will be binary audio data
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      
-      // Return the audio URL without playing - let the caller play it once
-      return {
-        success: true,
-        webSpeech: false,
-        huggingFace: true,
-        audioUrl: audioUrl,
-        model: modelId
-      };
-    } catch (error) {
-      console.error("Error in Hugging Face text-to-speech:", error);
-      toast.error("Text-to-Speech Error", {
-        description: "Unable to use Hugging Face speech synthesis. Please check your API key and connection.",
-      });
-      
-      // Fall back to browser's Web Speech API if available
-      if (window.speechSynthesis) {
-        console.log("Falling back to Web Speech API");
-        try {
-          // Create utterance without playing it
-          const utterance = new SpeechSynthesisUtterance(text);
-          
-          // Return metadata instead of playing
-          return {
-            success: true,
-            webSpeech: true,
-            huggingFace: false,
-            fallback: true,
-            utterance: utterance, // Return the utterance for the caller to play
-          };
-        } catch (fallbackError) {
-          console.error("Fallback Web Speech API also failed:", fallbackError);
-        }
-      }
-      
-      return {
-        success: false,
-        webSpeech: false,
-        huggingFace: false,
-        error: error instanceof Error ? error.message : "Unknown error"
-      };
     }
-  },
-  
-  // Get available voice options for Hugging Face models
-  getAvailableVoices: () => {
-    // These are predefined options for Hugging Face TTS models
-    return [
-      {
-        name: "Female (LJSpeech VITS)",
-        modelId: "espnet/kan-bayashi_ljspeech_vits",
-        lang: "en",
-        default: true,
-        isFemale: true
-      },
-      {
-        name: "Male (Tacotron2 LJSpeech)",
-        modelId: "speechbrain/tts-tacotron2-ljspeech",
-        lang: "en",
-        default: false,
-        isFemale: false
-      },
-      {
-        name: "Multilingual (MMS TTS)",
-        modelId: "facebook/mms-tts-eng",
-        lang: "multilingual",
-        default: false,
-        isFemale: true
-      },
-      {
-        name: "High Quality (YourTTS)",
-        modelId: "facebook/yourtts-multi-dialect",
-        lang: "multilingual",
-        default: false,
-        isFemale: false
-      }
-    ];
+    return { success: false, error: "Web Speech API not supported" };
   },
 
   // For speech recognition, we can use the browser's Web Speech API
-  // as Hugging Face doesn't support streaming audio for ASR
   startSpeechRecognition: () => {
     // Check for browser support
     if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
@@ -721,13 +554,14 @@ export const speechService = {
 // Add TypeScript declarations for the Web Speech API
 declare global {
   interface Window {
-    SpeechRecognition?: typeof SpeechRecognition;
-    webkitSpeechRecognition?: typeof SpeechRecognition;
-    speechSynthesis?: SpeechSynthesis;
+  // Use loose types to avoid DOM lib dependency issues
+  SpeechRecognition?: any;
+  webkitSpeechRecognition?: any;
+  __ENV__?: Record<string, string>;
   }
 }
 
-// Export a combined service object with only the Hugging Face services
+// Export a combined Groq-based service object
 export const aiServices = {
   validateApiConnection,
   computerVision: computerVisionService,

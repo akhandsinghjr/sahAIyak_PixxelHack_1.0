@@ -353,8 +353,8 @@ const Analysis = () => {
         Keep your response compassionate, supportive, and focused on actionable steps.
       `;
       
-      // Use the GPT service to generate the analysis
-      const response = await azureAIServices.gpt.chat(prompt, "gpt-4");
+  // Use the Groq Llama model to generate the analysis
+  const response = await azureAIServices.gpt.chat(prompt, "llama-3.3-70b-versatile");
       
       if (response && response.choices && response.choices.length > 0) {
         const analysisText = response.choices[0].message.content;

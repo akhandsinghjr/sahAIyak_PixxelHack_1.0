@@ -7,10 +7,46 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.groq_API_KEY || process.env.VITE_GROQ_API_KEY;
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
+// Groq Llama chat proxy (prevents exposing API key to browser)
+app.post('/api/groq/chat', async (req, res) => {
+  try {
+    if (!GROQ_API_KEY) {
+      return res.status(500).json({ error: 'Missing GROQ_API_KEY on server' });
+    }
+
+    const { messages, model = 'llama-3.3-70b-versatile' } = req.body || {};
+    console.log('[Groq Proxy] model:', model);
+    console.log('[Groq Proxy] messages count:', Array.isArray(messages) ? messages.length : 0);
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages array is required' });
+    }
+
+    // Use Groq REST API via axios to avoid bundling SDK in server
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      { model, messages },
+      { headers: { 'Authorization': `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json', 'Accept': 'application/json' } }
+    );
+
+    res.json(response.data);
+  } catch (error) {
+    const status = error.response?.status || 500;
+    const data = error.response?.data || null;
+    console.error('Groq chat proxy error status:', status);
+    console.error('Groq chat proxy error data:', data);
+    console.error('Groq chat proxy error message:', error.message);
+    res.status(status).json({
+      error: 'Groq proxy failed',
+      status,
+      details: data || error.message
+    });
+  }
+});
 
 // Store job status in memory (in production, use a database)
 const jobStatus = new Map();
