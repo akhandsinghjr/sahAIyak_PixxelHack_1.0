@@ -14,7 +14,7 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
   text, 
   autoPlay = true, 
   onComplete, 
-  voice = "en-US-JennyMultilingualNeural" 
+  voice = "Arista-PlayAI" 
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -25,9 +25,38 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
   
   useEffect(() => {
     if (text) {
+      // Reset states when text changes
+      setIsPlaying(false);
+      setAudioUrl(null);
+      setError(null);
       generateSpeech();
     }
+    
+    // Cleanup function to stop any ongoing playback
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      setIsPlaying(false);
+    };
   }, [text]);
+
+  // Separate useEffect to handle autoplay when audioUrl is set
+  useEffect(() => {
+    if (audioUrl && audioUrl !== 'web-speech-fallback' && autoPlay && audioRef.current) {
+      const playAudio = async () => {
+        try {
+          await audioRef.current?.play();
+          setIsPlaying(true);
+        } catch (error) {
+          console.error("Error autoplaying audio:", error);
+          setError("Could not autoplay audio. Click play to start.");
+        }
+      };
+      playAudio();
+    }
+  }, [audioUrl, autoPlay]);
   
   const generateSpeech = async () => {
     if (!text.trim()) return;
@@ -45,8 +74,10 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
         .replace(/\n\n+/g, "\n")
         .trim();
       
-      // If text is too long, truncate it for better speech
-      const maxLength = 500;
+      // If text is too long, truncate it to stay within Groq's 1.2K token limit
+      // Roughly 1 token ≈ 4 characters, so 1200 tokens ≈ 4800 characters
+      // We'll use 4000 characters to be safe
+      const maxLength = 4000;
       const truncatedText = processedText.length > maxLength 
         ? processedText.substring(0, maxLength) + "... I'll let you read the rest of my response."
         : processedText;
@@ -55,14 +86,20 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
       const result = await azureAIServices.speech.textToSpeech(truncatedText, voice);
       
       if (result.success) {
-        setAudioUrl(result.audioUrl!);
-        
-        // Automatically play audio if autoPlay is true
-        if (autoPlay) {
-          setIsPlaying(true);
+        if ('groqTTS' in result && result.audioUrl) {
+          // Groq TTS - use audio URL
+          setAudioUrl(result.audioUrl);
+        } else if ('webSpeech' in result && result.utterance) {
+          // Web Speech API fallback
+          if (autoPlay && 'speak' in result) {
+            result.speak?.();
+            setIsPlaying(true);
+          }
+          // For Web Speech API, we don't have an audio URL
+          setAudioUrl('web-speech-fallback');
         }
       } else {
-        setError(`Failed to generate speech: ${result.error}`);
+        setError(`Failed to generate speech: ${'error' in result ? result.error : 'Unknown error'}`);
       }
     } catch (error) {
       console.error("Speech generation error:", error);
@@ -155,7 +192,6 @@ const SpeechPlayback: React.FC<SpeechPlaybackProps> = ({
             ref={audioRef}
             src={audioUrl}
             className="hidden"
-            autoPlay={autoPlay}
             onEnded={handleAudioEnded}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}

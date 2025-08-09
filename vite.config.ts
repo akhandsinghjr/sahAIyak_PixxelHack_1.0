@@ -33,6 +33,14 @@ export default defineConfig(({ mode }) => {
         secure: true,
         rewrite: (path) => path.replace(/^\/groq/, ''),
         headers: groqApiKey ? { Authorization: `Bearer ${groqApiKey}` } : undefined,
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            // Handle different content types for audio endpoints
+            if (req.url?.includes('/audio/speech')) {
+              proxyReq.setHeader('Accept', 'audio/mpeg');
+            }
+          });
+        },
       },
     }
   },

@@ -45,7 +45,7 @@ const Chat = () => {
   // Add state for speech functionality
   const [useSpeech, setUseSpeech] = useState(true);
   const [activeAudioMessage, setActiveAudioMessage] = useState<string | null>(null);
-  const [selectedVoice, setSelectedVoice] = useState<string>("en-US-JennyMultilingualNeural");
+  const [selectedVoice, setSelectedVoice] = useState<string>("Arista-PlayAI");
 
   // Add new state for expanded images
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
@@ -59,6 +59,20 @@ const Chat = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
+
+  // Auto-play the latest assistant message when audio mode is enabled
+  useEffect(() => {
+    if (useSpeech && chatMessages.length > 0 && !activeAudioMessage) {
+      // Find the latest assistant message
+      const latestAssistantMessage = [...chatMessages]
+        .reverse()
+        .find(msg => msg.role === 'assistant');
+      
+      if (latestAssistantMessage) {
+        setActiveAudioMessage(latestAssistantMessage.content);
+      }
+    }
+  }, [useSpeech]);
 
   // Start the mental health assessment
   const startChat = async () => {
@@ -74,6 +88,11 @@ const Chat = () => {
           timestamp: new Date(),
         }
       ]);
+      
+      // If speech is enabled, auto-play the first message
+      if (useSpeech) {
+        setActiveAudioMessage(initialResponse.messages[0].content);
+      }
       
       setIsStarted(true);
       
@@ -791,8 +810,8 @@ const Chat = () => {
                       <Label htmlFor="voice-selection" className="text-sm block mb-1">Select voice:</Label>
                       <div className="grid grid-cols-2 gap-2">
                         {[
-                          { id: "en-US-JennyMultilingualNeural", name: "Jenny (Female)" },
-                          { id: "en-US-GuyMultilingualNeural", name: "Guy (Male)" }
+                          { id: "Arista-PlayAI", name: "Arista (Female)" },
+                          { id: "Basil-PlayAI", name: "Basil (Male)" }
                         ].map(voice => (
                           <Button 
                             key={voice.id}
@@ -890,7 +909,7 @@ const Chat = () => {
                             </span>
                           )}
                           {message.pendingImage && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:text-amber-900 dark:text-amber-100 animate-pulse">
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100 animate-pulse">
                               <CameraIcon className="h-3 w-3 mr-1" />
                               Taking photo...
                             </span>
@@ -985,8 +1004,8 @@ const Chat = () => {
                     {useSpeech && (
                       <div className="flex gap-1">
                         {[
-                          { id: "en-US-JennyMultilingualNeural", name: "Jenny" },
-                          { id: "en-US-GuyMultilingualNeural", name: "Guy" }
+                          { id: "Arista-PlayAI", name: "Arista" },
+                          { id: "Basil-PlayAI", name: "Basil" }
                         ].map(voice => (
                           <Button 
                             key={voice.id}
@@ -1043,7 +1062,7 @@ const Chat = () => {
                       size="icon"
                       variant="outline"
                       onClick={openChatFileSelector}
-                      title="Upload Custom Image"
+                      title="Upload Photo for Mood Analysis"
                       disabled={loading || isAutoCaptureInProgress}
                     >
                       <UploadIcon className="h-4 w-4" />
@@ -1053,7 +1072,7 @@ const Chat = () => {
                       size="icon"
                       variant="outline"
                       onClick={openCamera}
-                      title="Take Custom Photo"
+                      title="Take Photo for Mood Analysis"
                       disabled={loading || isAutoCaptureInProgress}
                     >
                       <CameraIcon className="h-4 w-4" />
@@ -1105,10 +1124,9 @@ const Chat = () => {
                     For serious concerns, please consult a qualified healthcare provider or emergency services.
                   </p>
                   <p className="mt-1">
-                    Your conversation is processed by Azure AI services to provide personalized support. 
-                    Photos are automatically captured with each message for thorough facial expression analysis.
-                    The assistant is designed to detect potential discrepancies between your words and emotional state,
-                    helping provide more accurate emotional support.
+                    Photos you share are analyzed using AI vision technology to understand your mood and emotional state.
+                    This helps provide more personalized support by considering both your words and visual expressions.
+                    All analysis is done to better assist you with mental health guidance.
                   </p>
                 </div>
               </CardContent>

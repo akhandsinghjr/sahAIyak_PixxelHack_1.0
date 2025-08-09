@@ -127,21 +127,68 @@ const ImprovementPlan = () => {
 
   // Parse AI response into structured day plans
   const parseAIPlanResponse = (aiResponse: string): DayPlan[] => {
-    // This is a simplified parser - in a real app, you might use more sophisticated parsing
+    try {
+      console.log('Parsing AI response:', aiResponse);
+      
+      // Try to extract JSON from the AI response
+      let jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      let planData;
+      
+      if (jsonMatch) {
+        try {
+          planData = JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+          console.warn('Failed to parse JSON from AI response, using fallback');
+          planData = null;
+        }
+      }
+      
+      // If we have valid JSON structure from AI, use it
+      if (planData && planData.days && Array.isArray(planData.days)) {
+        console.log('Using AI-generated plan structure');
+        return planData.days.map((day: any) => ({
+          day: day.day,
+          title: day.title || `Day ${day.day}`,
+          description: day.description || '',
+          activities: (day.activities || []).map((activity: any, index: number) => ({
+            id: `${day.day}-${index}`,
+            name: activity.name || 'Activity',
+            description: activity.description || '',
+            duration: activity.duration || '15 minutes',
+            type: activity.type || 'reflection'
+          })),
+          goals: day.goals || [],
+          tips: day.tips || [],
+          estimatedTime: day.estimatedTime || '45-60 minutes',
+          focusArea: day.focusArea || 'General Wellness'
+        }));
+      }
+      
+      // Fallback: Generate structure based on assessment data if AI response isn't structured
+      console.log('Using assessment-based fallback structure');
+      return generateFallbackPlan();
+      
+    } catch (error) {
+      console.error('Error parsing AI response:', error);
+      return generateFallbackPlan();
+    }
+  };
+
+  // Fallback plan generation based on assessment data
+  const generateFallbackPlan = (): DayPlan[] => {
     const days: DayPlan[] = [];
-    
-    // Create structured plans based on assessment data
     const factors = assessmentData?.factors || [];
     const lowScoreFactors = factors.filter((f: any) => f.value <= 5);
     const mediumScoreFactors = factors.filter((f: any) => f.value > 5 && f.value <= 7);
+    const highScoreFactors = factors.filter((f: any) => f.value >= 7);
 
     for (let i = 1; i <= 10; i++) {
       const day: DayPlan = {
         day: i,
-        title: getDayTitle(i),
+        title: getDayTitle(i, lowScoreFactors),
         description: getDayDescription(i, lowScoreFactors, mediumScoreFactors),
         activities: getDayActivities(i, lowScoreFactors),
-        goals: getDayGoals(i),
+        goals: getDayGoals(i, lowScoreFactors),
         tips: getDayTips(i),
         estimatedTime: "45-60 minutes",
         focusArea: getDayFocusArea(i, lowScoreFactors)
@@ -152,71 +199,112 @@ const ImprovementPlan = () => {
     return days;
   };
 
-  // Helper functions for generating day content
-  const getDayTitle = (day: number): string => {
-    const titles = [
-      "Foundation & Self-Awareness",
-      "Mindful Breathing & Grounding",
-      "Physical Wellness & Energy",
-      "Social Connection & Support",
-      "Stress Management Techniques",
-      "Creative Expression & Joy",
-      "Sleep & Recovery Focus",
-      "Emotional Regulation Skills",
-      "Building Resilience",
-      "Integration & Future Planning"
+  // Helper functions for generating day content (updated to use assessment data)
+  const getDayTitle = (day: number, lowFactors: any[] = []): string => {
+    const primaryConcern = lowFactors[0]?.name || 'Overall Wellness';
+    
+    const personalizedTitles = [
+      `Foundation & Understanding Your ${primaryConcern}`,
+      `Building Awareness Around ${primaryConcern}`,
+      `Taking Action on ${lowFactors[1]?.name || 'Physical Wellness'}`,
+      `Strengthening ${lowFactors[2]?.name || 'Social Connection'}`,
+      `Managing ${primaryConcern} Challenges`,
+      `Creative Approaches to ${primaryConcern}`,
+      `Rest & Recovery for ${primaryConcern}`,
+      `Emotional Skills for ${primaryConcern}`,
+      `Building Long-term Resilience`,
+      `Integration & Future Planning`
     ];
-    return titles[day - 1] || `Day ${day} Activities`;
+    
+    return personalizedTitles[day - 1] || `Day ${day} - ${primaryConcern} Focus`;
   };
 
   const getDayDescription = (day: number, lowFactors: any[], mediumFactors: any[]): string => {
-    if (day === 1) return "Begin your journey with self-reflection and establishing a foundation for positive change.";
-    if (day === 10) return "Consolidate your learnings and create a sustainable plan for continued growth.";
-    return `Continue building positive habits with focus on ${lowFactors[0]?.name || 'overall wellness'}.`;
+    const primaryConcern = lowFactors[0]?.name || 'overall wellness';
+    const concernLevel = lowFactors[0]?.value || 5;
+    
+    if (day === 1) {
+      return `Begin your journey by understanding your ${primaryConcern} patterns and establishing a foundation for positive change. Your current ${primaryConcern} level is ${concernLevel}/10.`;
+    }
+    if (day === 10) {
+      return `Consolidate your learnings about ${primaryConcern} and create a sustainable plan for continued growth beyond these 10 days.`;
+    }
+    
+    const focusArea = lowFactors[(day - 2) % lowFactors.length]?.name || primaryConcern;
+    return `Continue building positive habits with specific focus on improving your ${focusArea}. Target activities designed to address your current level of ${lowFactors.find(f => f.name === focusArea)?.value || concernLevel}/10.`;
   };
 
   const getDayActivities = (day: number, lowFactors: any[]): Activity[] => {
+    const primaryConcern = lowFactors[0]?.name?.toLowerCase() || 'overall mood';
     const baseActivities: Activity[] = [
       {
         id: `${day}-1`,
-        name: "Morning Mindfulness",
-        description: "Start your day with 10 minutes of mindful breathing or meditation",
+        name: "Morning Check-in",
+        description: `Start your day by rating your ${primaryConcern} and setting an intention for improvement`,
         duration: "10 minutes",
-        type: 'mindfulness'
-      },
-      {
-        id: `${day}-2`,
-        name: "Physical Movement",
-        description: day <= 3 ? "Gentle stretching or a 15-minute walk" : "30 minutes of moderate exercise",
-        duration: day <= 3 ? "15 minutes" : "30 minutes",
-        type: 'physical'
-      },
-      {
-        id: `${day}-3`,
-        name: "Reflection Time",
-        description: "Journal about your thoughts, feelings, and any insights from today",
-        duration: "15 minutes",
         type: 'reflection'
       }
     ];
 
-    // Add specific activities based on day and low-scoring factors
-    if (day % 3 === 0) {
+    // Add specific activities based on the primary concern
+    if (primaryConcern.includes('mood') || primaryConcern.includes('emotional')) {
       baseActivities.push({
-        id: `${day}-4`,
-        name: "Social Connection",
-        description: "Reach out to a friend, family member, or join a community activity",
+        id: `${day}-2`,
+        name: "Mood Regulation Practice",
+        description: "Practice deep breathing and mindfulness to regulate emotional responses",
+        duration: "15 minutes",
+        type: 'mindfulness'
+      });
+    } else if (primaryConcern.includes('energy') || primaryConcern.includes('physical')) {
+      baseActivities.push({
+        id: `${day}-2`,
+        name: "Energy Building Exercise",
+        description: day <= 3 ? "Gentle movement to boost energy levels" : "Moderate exercise to build physical stamina",
+        duration: day <= 3 ? "15 minutes" : "25 minutes",
+        type: 'physical'
+      });
+    } else if (primaryConcern.includes('sleep')) {
+      baseActivities.push({
+        id: `${day}-2`,
+        name: "Sleep Hygiene Practice",
+        description: "Implement sleep-promoting activities and create a calming environment",
+        duration: "20 minutes",
+        type: 'rest'
+      });
+    } else if (primaryConcern.includes('social') || primaryConcern.includes('connection')) {
+      baseActivities.push({
+        id: `${day}-2`,
+        name: "Social Connection Activity",
+        description: "Reach out to someone or engage in community activity",
         duration: "20 minutes",
         type: 'social'
       });
+    } else {
+      baseActivities.push({
+        id: `${day}-2`,
+        name: "Targeted Wellness Activity",
+        description: `Engage in an activity specifically designed to improve your ${primaryConcern}`,
+        duration: "20 minutes",
+        type: 'mindfulness'
+      });
     }
 
-    if (day === 6 || day === 9) {
+    baseActivities.push({
+      id: `${day}-3`,
+      name: "Evening Reflection",
+      description: `Journal about your progress with ${primaryConcern} and note any improvements or challenges`,
+      duration: "15 minutes",
+      type: 'reflection'
+    });
+
+    // Add variety every few days
+    if (day % 3 === 0 && lowFactors.length > 1) {
+      const secondaryConcern = lowFactors[1]?.name?.toLowerCase() || 'wellness';
       baseActivities.push({
         id: `${day}-4`,
-        name: "Creative Expression",
-        description: "Engage in any creative activity that brings you joy",
-        duration: "20 minutes",
+        name: `${lowFactors[1]?.name} Booster`,
+        description: `Additional activity to support your ${secondaryConcern} improvement`,
+        duration: "15 minutes",
         type: 'creative'
       });
     }
@@ -224,16 +312,19 @@ const ImprovementPlan = () => {
     return baseActivities;
   };
 
-  const getDayGoals = (day: number): string[] => {
+  const getDayGoals = (day: number, lowFactors: any[] = []): string[] => {
+    const primaryConcern = lowFactors[0]?.name || 'overall wellness';
+    const concernValue = lowFactors[0]?.value || 5;
+    
     const goals = [
-      "Complete all planned activities mindfully",
+      `Work on improving ${primaryConcern} from ${concernValue}/10`,
       "Practice self-compassion throughout the day",
-      "Notice and acknowledge small improvements"
+      "Complete all planned activities mindfully"
     ];
 
-    if (day === 1) goals.push("Establish a consistent daily routine");
-    if (day === 5) goals.push("Implement stress management techniques");
-    if (day === 10) goals.push("Create a plan for continued growth");
+    if (day === 1) goals.push(`Establish baseline awareness of your ${primaryConcern}`);
+    if (day === 5) goals.push(`Implement at least 2 strategies for ${primaryConcern} improvement`);
+    if (day === 10) goals.push(`Create a sustainable plan for continued ${primaryConcern} improvement`);
 
     return goals;
   };
@@ -241,19 +332,27 @@ const ImprovementPlan = () => {
   const getDayTips = (day: number): string[] => {
     return [
       "Start small and be consistent rather than perfect",
-      "Celebrate small wins and progress",
-      "Reach out for support when needed",
-      "Remember that healing is not linear"
+      "Celebrate small wins and progress you make",
+      "Reach out for support when you need it",
+      "Remember that improvement takes time and patience",
+      "Focus on progress, not perfection"
     ];
   };
 
   const getDayFocusArea = (day: number, lowFactors: any[]): string => {
-    const focusAreas = [
-      "Self-Awareness", "Mindfulness", "Physical Health", "Social Connection",
-      "Stress Management", "Creativity", "Sleep & Rest", "Emotional Skills",
-      "Resilience", "Integration"
+    const personalizedFocusAreas = [
+      "Self-Awareness & Assessment", 
+      lowFactors[0]?.name || "Mindfulness", 
+      lowFactors[1]?.name || "Physical Health", 
+      lowFactors[2]?.name || "Social Connection",
+      "Stress & Challenge Management", 
+      "Creativity & Joy", 
+      "Rest & Recovery", 
+      "Emotional Regulation",
+      "Building Resilience", 
+      "Integration & Planning"
     ];
-    return focusAreas[day - 1] || "General Wellness";
+    return personalizedFocusAreas[day - 1] || lowFactors[0]?.name || "General Wellness";
   };
 
   // Mark day as completed
@@ -332,7 +431,7 @@ const ImprovementPlan = () => {
                     <Button
                       key={plan.day}
                       variant={selectedDay === plan.day ? "default" : "ghost"}
-                      className={`w-full justify-start h-auto p-3 ${
+                      className={`w-full justify-start h-auto min-h-[60px] p-3 ${
                         selectedDay === plan.day 
                           ? 'bg-yellow-500 hover:bg-yellow-600 text-black' 
                           : completedDays.has(plan.day) 
@@ -341,25 +440,25 @@ const ImprovementPlan = () => {
                       }`}
                       onClick={() => setSelectedDay(plan.day)}
                     >
-                      <div className="flex items-center gap-3 w-full">
+                      <div className="flex items-start gap-3 w-full min-w-0">
                         {completedDays.has(plan.day) ? (
-                          <CheckCircle2 className={`h-5 w-5 ${
+                          <CheckCircle2 className={`h-5 w-5 shrink-0 ${
                             selectedDay === plan.day ? 'text-black' : 'text-green-600'
                           }`} />
                         ) : (
-                          <div className={`h-5 w-5 rounded-full border-2 ${
+                          <div className={`h-5 w-5 rounded-full border-2 shrink-0 ${
                             selectedDay === plan.day 
                               ? 'border-black' 
                               : 'border-gray-300 dark:border-gray-600'
                           }`} />
                         )}
-                        <div className="text-left flex-1">
-                          <div className={`font-medium ${
+                        <div className="text-left flex-1 min-w-0">
+                          <div className={`font-medium leading-tight ${
                             selectedDay === plan.day ? 'text-black' : 'text-gray-900 dark:text-white'
                           }`}>
                             Day {plan.day}
                           </div>
-                          <div className={`text-xs truncate ${
+                          <div className={`text-xs leading-tight break-words ${
                             selectedDay === plan.day 
                               ? 'text-black/70' 
                               : 'text-gray-600 dark:text-gray-400'

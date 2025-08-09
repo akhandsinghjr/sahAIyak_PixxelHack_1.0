@@ -30,7 +30,7 @@ const SpeechAvatar: React.FC<SpeechAvatarProps> = ({
   autoPlay = true, 
   onComplete, 
   avatarType = "lisa",
-  voice = "en-US-JennyMultilingualNeural",
+  voice = "Arista-PlayAI",
   showAvatarToggle = true,
   initialAvatarMode = true
 }) => {
@@ -52,9 +52,49 @@ const SpeechAvatar: React.FC<SpeechAvatarProps> = ({
   
   useEffect(() => {
     if (text) {
+      // Reset states when text changes
+      setIsPlaying(false);
+      setAvatarUrl(null);
+      setAudioUrl(null);
+      setError(null);
       generateMedia();
     }
+    
+    // Cleanup function to stop any ongoing playback
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      if (videoRef.current) {
+        videoRef.current.pause();
+        videoRef.current.currentTime = 0;
+      }
+      setIsPlaying(false);
+    };
   }, [text, useAvatarMode]);
+
+  // Separate useEffect to handle autoplay when media is ready
+  useEffect(() => {
+    if (autoPlay && !isPlaying) {
+      if ((avatarUrl && videoRef.current) || (audioUrl && audioRef.current)) {
+        const playMedia = async () => {
+          try {
+            if (avatarUrl && videoRef.current) {
+              await videoRef.current.play();
+            } else if (audioUrl && audioRef.current) {
+              await audioRef.current.play();
+            }
+            setIsPlaying(true);
+          } catch (error) {
+            console.error("Error autoplaying media:", error);
+            setError("Could not autoplay media. Click play to start.");
+          }
+        };
+        playMedia();
+      }
+    }
+  }, [avatarUrl, audioUrl, autoPlay, isPlaying]);
   
   const generateMedia = async () => {
     if (!text.trim()) return;
@@ -73,8 +113,10 @@ const SpeechAvatar: React.FC<SpeechAvatarProps> = ({
         .replace(/\n\n+/g, "\n")
         .trim();
       
-      // If text is too long, truncate it for better speech
-      const maxLength = 500;
+      // If text is too long, truncate it to stay within Groq's 1.2K token limit
+      // Roughly 1 token ≈ 4 characters, so 1200 tokens ≈ 4800 characters
+      // We'll use 4000 characters to be safe
+      const maxLength = 4000;
       const truncatedText = processedText.length > maxLength 
         ? processedText.substring(0, maxLength) + "... I'll let you read the rest of my response."
         : processedText;
@@ -110,13 +152,22 @@ const SpeechAvatar: React.FC<SpeechAvatarProps> = ({
       const speechResult = await azureAIServices.speech.textToSpeech(truncatedText, voice);
       
       if (speechResult.success) {
-        setAudioUrl(speechResult.audioUrl!);
-        
-        if (autoPlay) {
-          setIsPlaying(true);
+        if ('groqTTS' in speechResult && speechResult.audioUrl) {
+          // Groq TTS - use audio URL
+          setAudioUrl(speechResult.audioUrl);
+          
+          if (autoPlay) {
+            setIsPlaying(true);
+          }
+        } else if ('webSpeech' in speechResult && speechResult.utterance) {
+          // Web Speech API fallback
+          if (autoPlay && 'speak' in speechResult) {
+            speechResult.speak?.();
+            setIsPlaying(true);
+          }
         }
       } else {
-        setError(`Failed to generate speech: ${speechResult.error}`);
+        setError(`Failed to generate speech: ${'error' in speechResult ? speechResult.error : 'Unknown error'}`);
       }
     } catch (error) {
       console.error("Media generation error:", error);
@@ -274,7 +325,6 @@ const SpeechAvatar: React.FC<SpeechAvatarProps> = ({
               ref={audioRef}
               src={audioUrl}
               className="hidden"
-              autoPlay={autoPlay}
               onEnded={handleMediaEnded}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}

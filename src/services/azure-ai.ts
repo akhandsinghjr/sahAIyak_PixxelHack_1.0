@@ -386,54 +386,133 @@ export const gptService = {
 };
 
 /**
- * Image Analysis Service using Groq Llama
+ * Image Analysis Service using Groq Vision Model
  */
 export const imageAnalysisService = {
-  analyzeImageSentiment: async (imageInput: Blob | File | string) => {
+  analyzeImageMood: async (imageInput: Blob | File | string) => {
     try {
-      // First, analyze the image with our local approach
-      const visionResult = await computerVisionService.analyzeImage(imageInput);
+      console.log('🖼️ Starting mood analysis with Groq Vision API');
       
-      // For browser environments, we'll assume photos contain people
-      const imageDescription = "a person in a photo";
+      let imageUrl: string;
       
-      // Use direct LLM analysis
-      const prompt = `
-        You're analyzing a photo of a person. Without seeing the actual image, provide a general, 
-        compassionate analysis of how people might be feeling in different situations.
+      // Convert image to base64 data URL if it's a file/blob
+      if (imageInput instanceof File || imageInput instanceof Blob) {
+        imageUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(imageInput);
+        });
+      } else {
+        imageUrl = imageInput;
+      }
+      
+      // Detect environment and use appropriate endpoint
+      const isDevelopment = import.meta.env.DEV;
+      const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+      
+      let url: string;
+      let headers: HeadersInit;
+      
+      if (isDevelopment) {
+        // Development: use Vite proxy
+        url = '/groq/v1/chat/completions';
+        headers = {
+          'Content-Type': 'application/json',
+        };
+        console.log('🔧 Development mode: using Vite proxy for vision analysis');
+      } else {
+        // Production: call Groq API directly
+        url = 'https://api.groq.com/openai/v1/chat/completions';
+        headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        };
+        console.log('🚀 Production mode: calling Groq Vision API directly');
         
-        Include:
-        - Range of possible emotions people commonly experience (both positive and negative)
-        - Reminder that visual cues can sometimes be misinterpreted
-        - Encouragement to share how they're actually feeling in their own words
-        
-        Keep your response brief (2-3 sentences) and non-judgmental.
-      `;
-      
-      // Use Groq Llama API
-      const chatCompletion = await callGroqProxy([
-        { role: "system", content: "You are a helpful assistant." },
-        { role: "user", content: prompt }
-      ]);
-      
+        if (!apiKey) {
+          throw new Error('VITE_GROQ_API_KEY is not configured for production');
+        }
+      }
+
+      const payload = {
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        temperature: 0.3,
+        max_completion_tokens: 512,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Analyze this image to understand the person's emotional state. Provide insights that could subtly inform a mental health conversation:
+
+1. Overall emotional tone (e.g., appears calm, seems stressed, looks tired, appears energetic)
+2. Facial expression cues (subtle indicators of mood)
+3. Body language or posture if visible
+4. Energy level indicators
+
+Keep your analysis brief (1-2 sentences) and focused on observable emotional indicators that could help tailor supportive responses. Avoid definitive judgments - use phrases like "appears," "seems," or "suggests."
+
+Example: "The person appears somewhat tired with a gentle expression, suggesting they may benefit from supportive, calm conversation rather than high-energy encouragement."`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: imageUrl
+                }
+              }
+            ]
+          }
+        ]
+      };
+
+      console.log('📦 Vision Request payload model:', payload.model);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      console.log('📊 Vision Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Vision API error:', errorText);
+        throw new Error(`Vision API error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Vision analysis completed');
+
       return {
-        sentiment: chatCompletion.choices[0].message.content,
-        visionAnalysis: visionResult,
-        gptResponse: chatCompletion
+        success: true,
+        moodAnalysis: result.choices[0].message.content,
+        metadata: {
+          model: payload.model,
+          timestamp: new Date().toISOString()
+        }
       };
     } catch (error) {
-      console.error("Error analyzing image sentiment:", error);
-      // Return a fallback response
+      console.error('❌ Error in mood analysis:', error);
+      
+      // Fallback to a general response
       return {
-        sentiment: "I can see you've shared a photo. Visual expressions can reflect many emotions - from joy to concern. I'd love to hear how you're actually feeling in your own words, as that's more reliable than my interpretation of an image.",
-        visionAnalysis: {
-          description: {
-            captions: [{ text: "A photo" }]
-          }
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        moodAnalysis: "I'm unable to analyze the image at the moment. Please describe how you're feeling, and I'll help you work through your emotions.",
+        metadata: {
+          fallback: true,
+          timestamp: new Date().toISOString()
         }
       };
     }
   },
+  
+  // Keep the old method for compatibility but make it use the new vision approach
+  analyzeImageSentiment: async (imageInput: Blob | File | string) => {
+    return await imageAnalysisService.analyzeImageMood(imageInput);
+  }
 };
 
 /**
@@ -550,24 +629,59 @@ export const mentalHealthService = {
       
       if (userImage) {
         try {
-          // Store the image for reference 
-          imageUrl = URL.createObjectURL(userImage);
+          console.log('🖼️ Image provided, analyzing mood...');
           
-          // Store the image for reference but don't analyze it
-          imageUrl = URL.createObjectURL(userImage);
+          // Use the new mood analysis feature
+          const moodResult = await imageAnalysisService.analyzeImageMood(userImage);
           
-          // Don't do any sentiment analysis - just note that there's an image
+          if (moodResult.success) {
+            console.log('✅ Mood analysis successful');
+            
+            // Store the image for reference 
+            imageUrl = URL.createObjectURL(userImage);
+            
+            // Add the mood analysis to the conversation context
+            imageAnalysis = {
+              moodAnalysis: moodResult.moodAnalysis,
+              sentiment: moodResult.moodAnalysis, // For compatibility
+              visionAnalysis: {
+                description: { captions: [{ text: "a photo shared for mood analysis" }] }
+              }
+            };
+            
+            // Enhance the last message with mood context (but don't change the user's text)
+            const lastMessage = enhancedMessages[enhancedMessages.length - 1];
+            if (lastMessage && lastMessage.role === 'user') {
+              // Add mood context as a system message before the user's message
+              enhancedMessages.splice(-1, 0, {
+                role: "system",
+                content: `[Visual Context] From the shared photo: ${moodResult.moodAnalysis}. Use this as subtle context (5-10% weight) to inform your response tone and approach. Don't explicitly mention the visual analysis unless directly relevant.`
+              });
+            }
+          } else {
+            console.log('⚠️ Mood analysis failed, using fallback');
+            imageUrl = URL.createObjectURL(userImage);
+            
+            // Fallback response
+            imageAnalysis = {
+              moodAnalysis: "Unable to analyze visual cues clearly, focusing on conversation content.",
+              sentiment: null,
+              visionAnalysis: {
+                description: { captions: [{ text: "a shared photo" }] }
+              }
+            };
+          }
+        } catch (imageError) {
+          console.error("Error processing image in conversation:", imageError);
+          
+          // Gentle fallback for image errors
           imageAnalysis = {
-            sentiment: null, // No analysis
+            moodAnalysis: "Visual context unavailable, relying on conversation cues.",
+            sentiment: null,
             visionAnalysis: {
               description: { captions: [{ text: "a shared photo" }] }
             }
           };
-          
-          // Don't modify the user's message content - let them say what they want to say
-        } catch (imageError) {
-          console.error("Error processing image in conversation:", imageError);
-          // No need to show warning since we're not analyzing anyway
         }
       }
       
@@ -578,7 +692,7 @@ export const mentalHealthService = {
       console.log("📤 Message count:", enhancedMessages.length);
       
       const chatCompletion = await callGroqProxy([
-        { role: "system", content: "You are a supportive mental health assistant. Be natural and conversational. Always mention that you're not a replacement for professional help when appropriate." },
+        { role: "system", content: "You are a supportive mental health assistant. Be natural and conversational. When visual context is provided, let it subtly influence your tone and approach (not the main focus, but a gentle undercurrent). Prioritize the user's words while allowing visual cues to add nuance to your response. Always mention that you're not a replacement for professional help when appropriate." },
         ...enhancedMessages
       ]);
 
@@ -657,21 +771,43 @@ export const mentalHealthService = {
       }
       
       contextPrompt += `\nPlease create a structured 10-day mental health improvement plan with:
-- Daily activities and exercises
-- Specific goals for each day
-- Progressive difficulty
-- Focus on the identified concern areas
-- Building upon existing strengths
+- Daily activities and exercises specifically targeting the identified concern areas
+- Specific goals for each day that build progressively
+- Focus on the user's lowest-scoring factors: ${factors.filter(f => f.value <= 5).map(f => f.name).join(', ') || 'general wellness'}
+- Building upon existing strengths: ${factors.filter(f => f.value >= 7).map(f => f.name).join(', ') || 'identified positive areas'}
 - Practical, actionable steps
 - Time estimates for each activity
 - Tips for staying motivated
 
-Format the response as a clear, day-by-day plan that is easy to follow.`;
+Please format the response as JSON with this exact structure:
+{
+  "days": [
+    {
+      "day": 1,
+      "title": "Day 1 Title",
+      "description": "What this day focuses on",
+      "focusArea": "Primary focus area",
+      "estimatedTime": "45-60 minutes",
+      "activities": [
+        {
+          "name": "Activity name",
+          "description": "What to do",
+          "duration": "15 minutes",
+          "type": "mindfulness|physical|social|reflection|creative|rest"
+        }
+      ],
+      "goals": ["Goal 1", "Goal 2"],
+      "tips": ["Tip 1", "Tip 2"]
+    }
+  ]
+}
+
+Make sure each day specifically addresses the user's assessment results and builds toward improvement in their lowest-scoring areas.`;
 
       const chatCompletion = await callGroqProxy([
         { 
           role: "system", 
-          content: "You are an expert mental health coach who creates personalized, evidence-based improvement plans. Focus on practical, achievable daily activities that build positive mental health habits." 
+          content: "You are an expert mental health coach who creates personalized, evidence-based improvement plans. Always respond with valid JSON in the exact format requested. Focus on practical, achievable daily activities that build positive mental health habits based on the user's specific assessment results." 
         },
         { role: "user", content: contextPrompt }
       ]);
@@ -701,25 +837,141 @@ Format the response as a clear, day-by-day plan that is easy to follow.`;
 };
 
 /**
- * Speech Service using browser Web Speech API
+ * Speech Service using Groq's TTS API and browser Web Speech API
  */
 export const speechService = {
-  textToSpeech: async (text: string) => {
-    // Web Speech API only (client-side)
+  textToSpeech: async (text: string, voice: string = "Arista-PlayAI") => {
+    console.log('🎤 Starting TTS with Groq API');
+    console.log('📝 Text length:', text.length);
+    console.log('🗣️ Voice:', voice);
+    
+    try {
+      // Detect environment and use appropriate endpoint
+      const isDevelopment = import.meta.env.DEV;
+      const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+      
+      let url: string;
+      let headers: HeadersInit;
+      
+      if (isDevelopment) {
+        // Development: use Vite proxy
+        url = '/groq/v1/audio/speech';
+        headers = {
+          'Content-Type': 'application/json',
+        };
+        console.log('🔧 Development mode: using Vite proxy for TTS');
+      } else {
+        // Production: call Groq API directly
+        url = 'https://api.groq.com/openai/v1/audio/speech';
+        headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        };
+        console.log('🚀 Production mode: calling Groq TTS API directly');
+        
+        if (!apiKey) {
+          throw new Error('VITE_GROQ_API_KEY is not configured for production');
+        }
+      }
+
+      const payload = {
+        model: "playai-tts",
+        voice: voice,
+        input: text,
+        response_format: "mp3"
+      };
+
+      console.log('📦 TTS Request payload:', payload);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      console.log('📊 TTS Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ TTS API Error:', response.status, errorText);
+        
+        // Fallback to Web Speech API
+        console.log('🔄 Falling back to Web Speech API');
+        return await speechService.fallbackToWebSpeech(text);
+      }
+
+      // Get audio data as blob
+      const audioBlob = await response.blob();
+      console.log('🎵 Audio blob size:', audioBlob.size);
+
+      // Create audio URL
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+
+      return {
+        success: true,
+        groqTTS: true,
+        audio,
+        audioUrl,
+        cleanup: () => URL.revokeObjectURL(audioUrl)
+      };
+
+    } catch (error) {
+      console.error('❌ Groq TTS failed:', error);
+      console.log('🔄 Falling back to Web Speech API');
+      return await speechService.fallbackToWebSpeech(text);
+    }
+  },
+
+  // Fallback to Web Speech API
+  fallbackToWebSpeech: async (text: string) => {
     if (window.speechSynthesis) {
       try {
         const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.9;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        
         return {
           success: true,
           webSpeech: true,
           utterance,
+          speak: () => window.speechSynthesis.speak(utterance),
+          stop: () => window.speechSynthesis.cancel()
         };
       } catch (error) {
         console.error("Web Speech synthesis failed:", error);
         return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
       }
     }
-    return { success: false, error: "Web Speech API not supported" };
+    return { success: false, error: "No TTS options available" };
+  },
+
+  // Get available voices (Groq voices + Web Speech voices)
+  getAvailableVoices: async () => {
+    const groqVoices = [
+      { id: "Arista-PlayAI", name: "Arista (Female, PlayAI)", provider: "groq", gender: "female" },
+      { id: "Basil-PlayAI", name: "Basil (Male, PlayAI)", provider: "groq", gender: "male" }
+    ];
+
+    const webVoices = window.speechSynthesis ? 
+      window.speechSynthesis.getVoices().map(voice => ({
+        id: voice.name,
+        name: voice.name,
+        provider: "web",
+        lang: voice.lang
+      })) : [];
+
+    return {
+      groq: groqVoices,
+      web: webVoices,
+      all: [...groqVoices, ...webVoices]
+    };
+  },
+
+  // Helper function to get voice by gender preference
+  getVoiceByGender: (gender: 'male' | 'female' = 'female') => {
+    return gender === 'female' ? 'Arista-PlayAI' : 'Basil-PlayAI';
   },
 
   // For speech recognition, we can use the browser's Web Speech API
