@@ -56,30 +56,72 @@ const getEnvVariable = (key: string, defaultValue: string = ''): string => {
 
 // Client calls Vite dev proxy; no Groq SDK in browser
 const callGroqProxy = async (messages: Array<{ role: string; content: string }>, model = "llama-3.3-70b-versatile") => {
-  console.log(`🚀 Making Groq proxy call to /groq/v1/chat/completions`);
+  console.log('🚀 Making Groq API call');
   console.log(`📝 Model: ${model}`);
   console.log(`💬 Messages count: ${messages.length}`);
   
   const payload = { messages, model };
-  console.log(`📦 Request payload:`, payload);
+  console.log('📦 Request payload:', payload);
+
+  // Detect environment and use appropriate endpoint
+  const isDevelopment = import.meta.env.DEV;
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
   
-  const resp = await fetch('/groq/v1/chat/completions', {
+  let url: string;
+  let headers: HeadersInit;
+  
+  if (isDevelopment) {
+    // Development: use Vite proxy
+    url = '/groq/v1/chat/completions';
+    headers = {
+      'Content-Type': 'application/json',
+    };
+    console.log('🔧 Development mode: using Vite proxy');
+  } else {
+    // Production: call Groq API directly
+    url = 'https://api.groq.com/openai/v1/chat/completions';
+    headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    };
+    console.log('🚀 Production mode: calling Groq API directly');
+    
+    if (!apiKey) {
+      throw new Error('VITE_GROQ_API_KEY is not configured for production');
+    }
+  }
+
+  const resp = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    headers,
+    body: JSON.stringify(payload),
   });
-  
+
   console.log(`📊 Response status: ${resp.status} ${resp.statusText}`);
   
   if (!resp.ok) {
     const txt = await resp.text();
-    console.error('❌ Groq proxy failure:', resp.status, txt);
-    throw new Error(`Groq proxy error ${resp.status}: ${txt}`);
+    console.error('❌ API Error:', resp.status, txt);
+    throw new Error(`Groq API error ${resp.status}: ${txt}`);
   }
+
+  // Check if response has content before parsing
+  const responseText = await resp.text();
+  console.log('📄 Response length:', responseText.length);
   
-  const result = await resp.json();
-  console.log(`✅ Groq proxy success:`, result);
-  return result;
+  if (!responseText.trim()) {
+    throw new Error('Empty response from Groq API');
+  }
+
+  try {
+    const result = JSON.parse(responseText);
+    console.log('✅ Groq API call successful');
+    return result;
+  } catch (parseError) {
+    console.error('❌ JSON Parse Error:', parseError);
+    console.error('📄 Response text:', responseText);
+    throw new Error(`Failed to parse Groq API response: ${parseError}`);
+  }
 };
 
 // Add TypeScript type definitions for global env vars
